@@ -1,0 +1,167 @@
+import streamlit as st
+import cv2
+import numpy as np
+from PIL import Image
+import io
+from supabase import create_client
+
+# --- 1. FRONTEND BRANDING & CONFIG ---
+st.set_page_config(page_title="Ama's Sketch", page_icon="🎨", layout="wide")
+
+# Database Connection - Replace with your private credentials
+URL = "YOUR_SUPABASE_URL"
+KEY = "YOUR_SUPABASE_KEY"
+
+@st.cache_resource
+def init_connection():
+    return create_client(URL, KEY)
+
+try:
+    supabase = init_connection()
+except Exception:
+    st.error("Backend Disconnected. Please verify Supabase keys.")
+
+# Initialize Session State
+if 'user' not in st.session_state:
+    st.session_state.user = None
+
+# --- 2. BACKEND & LOGIC ENGINES ---
+
+def get_sketch(img):
+    """The Thermobotconfined Core: Converts Presence into Absence."""
+    img_np = np.array(img)
+    # Convert to Grayscale
+    grey = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    # Invert and Blur
+    invert = cv2.bitwise_not(grey)
+    blur = cv2.GaussianBlur(invert, (21, 21), 0)
+    # Final Sketch Division
+    sketch = cv2.divide(grey, cv2.bitwise_not(blur), scale=256.0)
+    return sketch
+
+def log_data_wealth(user_id, img_array):
+    """The Amas Data-to-Money algorithm."""
+    try:
+        # Calculate data value (1 MB = ₦15.00)
+        data_value = (img_array.size / 1000000) * 15 
+        supabase.table("earnings_logs").insert({
+            "user_id": user_id,
+            "naira_value": data_value,
+            "data_type": "Masterpiece_Dataset"
+        }).execute()
+    except:
+        pass # Maintains silent operation for the Boss Dashboard
+
+# --- 3. SIDEBAR BRANDING ---
+
+with st.sidebar:
+    try:
+        # Displays the professional logo you provided
+        st.image("logo.png", use_container_width=True)
+    except:
+        st.title("🎨 AMA'S SKETCH")
+        st.info("Upload logo.png to activate branding.")
+    
+    st.markdown("---")
+    if st.session_state.user:
+        st.success(f"ARTIST: {st.session_state.user.email.split('@')[0].upper()}")
+        if st.button("Logout"):
+            st.session_state.user = None
+            st.rerun()
+
+# --- 4. AUTHENTICATION (ACCESS CONTROL) ---
+
+if st.session_state.user is None:
+    st.title("🎨 Welcome to Ama's Sketch")
+    tab1, tab2 = st.tabs(["Login", "Create Account"])
+    
+    with tab1:
+        email = st.text_input("Email", key="login_email")
+        pw = st.text_input("Password", type="password", key="login_pw")
+        if st.button("Login"):
+            try:
+                res = supabase.auth.sign_in_with_password({"email": email, "password": pw})
+                st.session_state.user = res.user
+                st.rerun()
+            except:
+                st.error("Access Denied.")
+            
+    with tab2:
+        st.write("Join the elite circle of artists.")
+        new_email = st.text_input("Email", key="sig_email")
+        new_pw = st.text_input("Password", type="password", key="sig_pw")
+        if st.button("Sign Up"):
+            try:
+                supabase.auth.sign_up({"email": new_email, "password": new_pw})
+                st.info("Verification email sent!")
+            except:
+                st.error("Registration failed.")
+    st.stop()
+
+# --- 5. THE GENIUS WORKSPACE ---
+
+username = st.session_state.user.email.split('@')[0].upper()
+st.header(f"GREETINGS, {username}!")
+st.write("---")
+
+choice = st.radio(
+    "SELECT OPERATIONAL MODE:",
+    ["TRANSFORMING 🎨", "TEACHING 📚", "BOSS DASHBOARD 💰"],
+    horizontal=True
+)
+
+# FRONTEND: TRANSFORMING MODE
+if choice == "TRANSFORMING 🎨":
+    st.write("### Turn your photo into a Masterpiece")
+    file = st.file_uploader("Choose an Image", type=['jpg', 'png', 'jpeg'])
+    
+    if file:
+        image = Image.open(file)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(image, caption="Presence (Original)", use_container_width=True)
+        
+        if st.button("EXECUTE SKETCH"):
+            with st.spinner("Processing through Amas Logic..."):
+                sketch_res = get_sketch(image)
+                with col2:
+                    st.image(sketch_res, caption="Absence (Sketch Result)", use_container_width=True)
+                
+                # LOGGING: Backend data wealth tracking
+                log_data_wealth(st.session_state.user.id, np.array(image))
+                
+                # EXPORT
+                final_img = Image.fromarray(sketch_res).convert("RGB")
+                buf = io.BytesIO()
+                final_img.save(buf, format="JPEG")
+                st.download_button("📥 Save Masterpiece", buf.getvalue(), "ama_sketch.jpg")
+
+# FRONTEND: TEACHING MODE
+elif choice == "TEACHING 📚":
+    st.write("### 🎓 Ama's Mastery Series")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.video("https://www.youtube.com/watch?v=DaxL4gYwUrU")
+        st.caption("Lesson 1: Mastering Graphite & Shading")
+    with col2:
+        st.video("https://www.youtube.com/watch?v=p9QcEFQFnVQ")
+        st.caption("Lesson 2: Advanced Realism Techniques")
+
+# BACKEND: BOSS DASHBOARD (PRIVATE PROFIT VIEW)
+elif choice == "BOSS DASHBOARD 💰":
+    st.write("### 💼 Private Profit Center")
+    try:
+        response = supabase.table("earnings_logs").select("naira_value").execute()
+        data = response.data
+        total_rev = sum(item['naira_value'] for item in data)
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Data Density", f"{len(data)} Units")
+        m2.metric("Total Thermal Wealth", f"₦{total_rev:,.2f}")
+        m3.metric("Dataset Growth", "↑ 12%")
+        
+        st.write("---")
+        st.line_chart([item['naira_value'] for item in data])
+        st.info("This dashboard displays the value of your proprietary art dataset.")
+    except Exception:
+        st.warning("Ensure Supabase table 'earnings_logs' is active to view data wealth.")
